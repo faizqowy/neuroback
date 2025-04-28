@@ -20,6 +20,8 @@ import random
 import numpy as np
 from multiprocessing import Pool
 
+isCPU = True
+
 
 # hyperparameter setting
 hyper_params = {}
@@ -69,8 +71,12 @@ train_loader = DataLoader(dataset_train, batch_size=hyper_params["batch_size"], 
 vld_loader = DataLoader(dataset_vld, batch_size=1, shuffle=False, pin_memory=True, num_workers=1)
 
 # load model and optimizer weights
-model = GTModel(3, 3).cuda()
-optimizer = torch.optim.AdamW(model.parameters(), lr=hyper_params["lr"])
+if(isCPU):
+	model = GTModel(3, 3).cpu()
+	optimizer = torch.optim.AdamW(model.parameters(), lr=hyper_params["lr"])
+else:
+	model = GTModel(3, 3).cuda()
+	optimizer = torch.optim.AdamW(model.parameters(), lr=hyper_params["lr"])
 
 if hyper_params["checkpoint_path"] is not None and os.path.isfile(hyper_params["checkpoint_path"]):
 	checkpoint = torch.load(hyper_params["checkpoint_path"])
@@ -103,8 +109,12 @@ def train(log_file):
 			y01 = None
 
 			try:
-				model = model.cuda()
-				data = data.cuda()
+				if isCPU:
+					data = data.cpu()
+					model = model.cpu()
+				else:
+					data = data.cuda()
+					model = model.cuda()
 
 				y01_indices = (data.y != 2).nonzero(as_tuple=True)
 				y01 = data.y[y01_indices].float()
@@ -113,7 +123,11 @@ def train(log_file):
 				u1 = torch.sum((y01 == 1).int()).cpu()
 				u01 = u0 + u1
 				assert(u01 == y01.shape[0])
-				weight = torch.zeros(u01).cuda()
+
+				if(isCPU):
+					weight = torch.zeros(u01).cpu()
+				else:					
+					weight = torch.zeros(u01).cuda()
 				weight[y01 == 0] = u01 / (2 * (u0 + 1))
 				weight[y01 == 1] = u01 / (2 * (u1 + 1))
 				crit = BCELoss(weight=weight.view(-1, 1))
@@ -187,8 +201,12 @@ def evaluate(log_file):
 			y01_indices = None
 			y01 = None
 			try:
-				data = data.cuda()
-				model = model.cuda()
+				if isCPU:
+					data = data.cpu()
+					model = model.cpu()
+				else:
+					data = data.cuda()
+					model = model.cuda()
 				
 				y01_indices = (data.y != 2).nonzero(as_tuple=True)
 
@@ -198,7 +216,10 @@ def evaluate(log_file):
 				u1 = torch.sum((y01 == 1).int()).cpu()
 				u01 = u0 + u1
 				assert(u01 == y01.shape[0])
-				weight = torch.zeros(u01).cuda()
+				if(isCPU):
+					weight = torch.zeros(u01).cpu()
+				else:
+					weight = torch.zeros(u01).cuda()
 				weight[y01 == 0] = u01 / (2 * (u0 + 1))
 				weight[y01 == 1] = u01 / (2 * (u1 + 1))
 				crit = BCELoss(weight=weight.view(-1, 1))

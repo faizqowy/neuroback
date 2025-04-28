@@ -12,7 +12,7 @@ import tarfile
 
 
 def predict_single(pt_dir_path, pt_file, model_path, res_dir_path, is_cuda=True):
-	data = torch.load(os.path.join(pt_dir_path, pt_file))
+	data = torch.load(os.path.join(pt_dir_path, pt_file), weights_only=False)
 
 	reverse = data.edge_index.index_select(0, torch.LongTensor([1, 0]))
 	data.edge_index = torch.cat([data.edge_index, reverse], dim=1)
@@ -27,7 +27,7 @@ def predict_single(pt_dir_path, pt_file, model_path, res_dir_path, is_cuda=True)
 	if is_cuda:
 		data = data.cuda()
 
-		checkpoint = torch.load(model_path, map_location=torch.device('cuda'))
+		checkpoint = torch.load(model_path, map_location=torch.device('cuda'), weights_only=False)
 
 		mymodel.load_state_dict(checkpoint['model_state_dict'])
 		mymodel = mymodel.cuda()
@@ -36,7 +36,7 @@ def predict_single(pt_dir_path, pt_file, model_path, res_dir_path, is_cuda=True)
 	else:
 		data = data.cpu()
 
-		checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
+		checkpoint = torch.load(model_path, map_location=torch.device('cpu'), weights_only=False)
 
 		mymodel.load_state_dict(checkpoint['model_state_dict'])
 
@@ -112,33 +112,34 @@ def predict_mix(pt_dir_path, model_path, res_dir_path):
 
 
 def predict_cpu(pt_dir_path, model_path, res_dir_path):
-	if not os.path.isdir(res_dir_path):
-		os.makedirs(res_dir_path)
+    if not os.path.isdir(res_dir_path):
+        os.makedirs(res_dir_path)
 
-	pt_file_lst = list(os.listdir(pt_dir_path))
-	pt_file_lst = sorted(pt_file_lst, key=lambda pt_file: os.path.getsize(f"{pt_dir_path}/{pt_file}"))
+    pt_file_lst = list(os.listdir(pt_dir_path))
+    pt_file_lst = sorted(pt_file_lst, key=lambda pt_file: os.path.getsize(os.path.join(pt_dir_path, pt_file)))
 
-	if not os.path.isdir("./log/predict_cpu"):
-		os.makedirs("./log/predict_cpu")
+    log_dir = "./log/predict_cpu"
+    if not os.path.isdir(log_dir):
+        os.makedirs(log_dir)
 
-	with tqdm(total=len(pt_file_lst)) as pbar:
-		for pt_file in pt_file_lst:
-			with open(f"./log/predict_cpu/{pt_file}.csv", "w") as perf_file:
-				start = time.time()
-				try:
-					predict_single(pt_dir_path, pt_file, model_path, res_dir_path, is_cuda=False)
-				except Exception as e:
-					print(pt_file, e)
-					break
-					
-				time_cost = time.time() - start # in seconds
+    with tqdm(total=len(pt_file_lst)) as pbar:
+        for pt_file in pt_file_lst:
+            log_path = os.path.join(log_dir, f"{pt_file}.csv")
+            with open(log_path, "w") as perf_file:
+                start = time.time()
+                try:
+                    predict_single(pt_dir_path, pt_file, model_path, res_dir_path, is_cuda=False)
+                    time_cost = time.time() - start
+                    perf = f"{pt_file},cpu,{time_cost:.6f}\n"
+                    perf_file.write(perf)
+                except Exception as e:
+                    perf_file.write(f"{pt_file},cpu,error,{str(e)}\n")
+                    print(f"Error processing {pt_file}: {e}")
+                    break
 
-				perf = pt_file + ",cpu," + str(time_cost) + "\n"
-				perf_file.write(perf)
+                pbar.update()
 
-				pbar.update()
-
-		print("Done")
+    print("Done")
 
 
 def predict_cuda(pt_dir_path, model_path, res_dir_path):
